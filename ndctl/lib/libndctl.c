@@ -1430,7 +1430,7 @@ static int add_of_pmem_dimm(struct ndctl_dimm *dimm, const char *dimm_base)
 
 	dbg(ctx, "Compatible of_pmem dimm %d at %s\n", dimm->id, buf);
 	if(strcmp(buf, "ibm,pmemory") == 0){
-		dimm->ops = intel_dimm_ops;
+		dimm->ops = papr_dimm_ops;
 		rc = 0;
 		goto out;
 	}

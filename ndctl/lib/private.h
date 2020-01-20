@@ -32,6 +32,7 @@
 #include "hpe1.h"
 #include "msft.h"
 #include "hyperv.h"
+#include "papr.h"
 
 struct nvdimm_data {
 	struct ndctl_cmd *cmd_read;
@@ -272,6 +273,7 @@ struct ndctl_cmd {
 		struct ndn_pkg_msft msft[0];
 		struct nd_pkg_hyperv hyperv[0];
 		struct nd_pkg_intel intel[0];
+		struct nd_pkg_papr_scm papr[0];
 		struct nd_cmd_get_config_size get_size[0];
 		struct nd_cmd_get_config_data_hdr get_data[0];
 		struct nd_cmd_set_config_hdr set_data[0];
@@ -347,6 +349,7 @@ struct ndctl_dimm_ops * const intel_dimm_ops;
 struct ndctl_dimm_ops * const hpe1_dimm_ops;
 struct ndctl_dimm_ops * const msft_dimm_ops;
 struct ndctl_dimm_ops * const hyperv_dimm_ops;
+struct ndctl_dimm_ops * const papr_dimm_ops;
 
 static inline struct ndctl_bus *cmd_to_bus(struct ndctl_cmd *cmd)
 {
