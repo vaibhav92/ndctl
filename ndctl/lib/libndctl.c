@@ -801,6 +801,28 @@ static void parse_nfit_mem_flags(struct ndctl_dimm *dimm, char *flags)
 				ndctl_dimm_get_devname(dimm), flags);
 }
 
+static void parse_of_pmem_flags(struct ndctl_dimm *dimm, char *flags)
+{
+	char *start, *end;
+
+	start = flags;
+	while ((end = strchr(start, ' '))) {
+		*end = '\0';
+		if (strcmp(start, "not_armed") == 0)
+			dimm->flags.f_arm = 1;
+		else if (strcmp(start, "save_fail") == 0)
+			dimm->flags.f_save = 1;
+		else if (strcmp(start, "flush_fail") == 0)
+			dimm->flags.f_flush = 1;
+		else if (strcmp(start, "smart_notify") == 0)
+			dimm->flags.f_notify = 1;
+		start = end + 1;
+	}
+	if (end != start)
+		dbg(ndctl_dimm_get_ctx(dimm), "%s: %s\n",
+				ndctl_dimm_get_devname(dimm), flags);
+}
+
 static void parse_dimm_flags(struct ndctl_dimm *dimm, char *flags)
 {
 	char *start, *end;
@@ -1436,8 +1458,17 @@ static int add_of_pmem_dimm(struct ndctl_dimm *dimm, const char *dimm_base)
 	if (strcmp(buf, "ibm,pmemory") == 0) {
 		dimm->cmd_family = NVDIMM_FAMILY_PAPR_SCM;
 		rc = 0;
-		goto out;
+		goto out_monitor;
 	}
+
+out_monitor:
+	/* read the flags and also allocate the monitor mode event_fd */
+	sprintf(path, "%s/papr_flags", dimm_base);
+	if (sysfs_read_attr(ctx, path, buf) == 0)
+		parse_of_pmem_flags(dimm, buf);
+
+	/* Allocate monitor mode fd */
+	dimm->health_eventfd = open(path, O_RDONLY|O_CLOEXEC);
 out:
 	free(path);
 	return rc;
