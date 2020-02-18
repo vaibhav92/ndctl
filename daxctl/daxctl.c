@@ -79,7 +79,7 @@ static struct cmd_struct commands[] = {
 int main(int argc, const char **argv)
 {
 	struct daxctl_ctx *ctx;
-	int rc;
+	int rc, out;
 
 	/* Look for flags.. */
 	argv++;
@@ -100,10 +100,13 @@ int main(int argc, const char **argv)
 	rc = daxctl_new(&ctx);
 	if (rc)
 		goto out;
-	main_handle_internal_command(argc, argv, ctx, commands,
-			ARRAY_SIZE(commands), PROG_DAXCTL);
+	rc = main_handle_internal_command(argc, argv, ctx, commands,
+				     ARRAY_SIZE(commands), PROG_DAXCTL, &out);
 	daxctl_unref(ctx);
-	fprintf(stderr, "Unknown command: '%s'\n", argv[0]);
+	if (!rc)
+		fprintf(stderr, "Unknown command: '%s'\n", argv[0]);
+
+	return out;
 out:
 	return 1;
 }
