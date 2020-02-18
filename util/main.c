@@ -121,11 +121,12 @@ out:
 	return status;
 }
 
-void main_handle_internal_command(int argc, const char **argv, void *ctx,
-		struct cmd_struct *cmds, int num_cmds, enum program prog)
+int main_handle_internal_command(int argc, const char **argv, void *ctx,
+		struct cmd_struct *cmds, int num_cmds, enum program prog,
+		int *out)
 {
 	const char *cmd = argv[0];
-	int i;
+	int i, handled = 0;
 
 	/* Turn "<binary> cmd --help" into "<binary> help cmd" */
 	if (argc > 1 && !strcmp(argv[1], "--help")) {
@@ -137,6 +138,9 @@ void main_handle_internal_command(int argc, const char **argv, void *ctx,
 		struct cmd_struct *p = cmds+i;
 		if (strcmp(p->cmd, cmd))
 			continue;
-		exit(run_builtin(p, argc, argv, ctx, prog));
+		*out = run_builtin(p, argc, argv, ctx, prog);
+		handled = 1;
 	}
+
+	return handled;
 }
