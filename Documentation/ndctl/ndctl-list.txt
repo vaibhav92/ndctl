@@ -129,6 +129,30 @@ include::xable-bus-options.txt[]
     "shutdown_state":"clean"
   }
 }
+-S::
+--stats::
+	Include dimm statistics in the listing. For example:
+[verse]
+{
+  "dev":"nmem0"
+  "stats":{
+    "Controller Reset Count":2,
+    "Controller Reset Elapsed Time":50800,
+    "Power-on Seconds":51400,
+    "Critical Resource Utilization":"0%",
+    "Host Load Count":4056485,
+    "Host Store Count":8956850,
+    "Host Load Duration":765053890,
+    "Host Store Duration":715390700,
+    "Media Read Count":0,
+    "Media Write Count":6178,
+    "Media Read Duration":0,
+    "Media Write Duration":9468375,
+    "Cache Read Hit Count":4056485,
+    "Cache Write Hit Count":8432554,
+    "Fast Write Count":8959962
+  }
+}
 
 -F::
 --firmware::

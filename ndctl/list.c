@@ -32,6 +32,7 @@ static struct {
 	bool namespaces;
 	bool idle;
 	bool health;
+	bool stats;
 	bool dax;
 	bool media_errors;
 	bool human;
@@ -367,6 +368,13 @@ static void filter_dimm(struct ndctl_dimm *dimm, struct util_filter_ctx *ctx)
 		}
 	}
 
+	if (list.stats) {
+		struct json_object *jstats;
+
+		jstats = util_dimm_stats_to_json(dimm);
+		json_object_object_add(jdimm, "stats", jstats);
+	}
+
 	if (list.firmware) {
 		struct json_object *jfirmware;
 
@@ -479,6 +487,7 @@ int cmd_list(int argc, const char **argv, struct ndctl_ctx *ctx)
 		OPT_BOOLEAN('D', "dimms", &list.dimms, "include dimm info"),
 		OPT_BOOLEAN('F', "firmware", &list.firmware, "include firmware info"),
 		OPT_BOOLEAN('H', "health", &list.health, "include dimm health"),
+		OPT_BOOLEAN('S', "stats", &list.stats, "include dimm stats"),
 		OPT_BOOLEAN('R', "regions", &list.regions,
 				"include region info"),
 		OPT_BOOLEAN('N', "namespaces", &list.namespaces,

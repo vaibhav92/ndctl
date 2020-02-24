@@ -238,6 +238,7 @@ struct ndctl_namespace {
  * @status: negative if failed, 0 if success, > 0 if never submitted
  * @get_firmware_status: per command firmware status field retrieval
  * @iter: iterator for multi-xfer commands
+ * @private_data: Used by dimm-provider to store private data
  * @source: source cmd of an inherited iter.total_buf
  *
  * For dynamically sized commands like 'get_config', 'set_config', or
@@ -266,6 +267,7 @@ struct ndctl_cmd {
 		u32 total_xfer;
 		int dir;
 	} iter;
+	void *private_data;
 	struct ndctl_cmd *source;
 	union {
 		struct nd_cmd_ars_cap ars_cap[0];
@@ -352,6 +354,10 @@ struct ndctl_dimm_ops {
 	int (*dimm_init)(struct ndctl_dimm *);
 	/* Called just before struct ndctl_dimm is de-allocated */
 	void (*dimm_uninit)(struct ndctl_dimm *);
+	/* Return a command to fetch dimm stats */
+	struct ndctl_cmd *(*new_stats)(struct ndctl_dimm *);
+	/* Return a single dimm-stat from the command until error */
+	int (*get_stat)(struct ndctl_cmd *, struct ndctl_dimm_stat *);
 };
 
 extern struct ndctl_dimm_ops * const intel_dimm_ops;

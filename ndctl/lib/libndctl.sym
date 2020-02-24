@@ -431,3 +431,8 @@ LIBNDCTL_23 {
 	ndctl_region_get_align;
 	ndctl_region_set_align;
 } LIBNDCTL_22;
+
+LIBNDCTL_24 {
+	ndctl_dimm_cmd_new_stats;
+	ndctl_dimm_get_stat;
+} LIBNDCTL_23;

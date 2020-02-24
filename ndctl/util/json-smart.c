@@ -221,3 +221,76 @@ struct json_object *util_dimm_health_to_json(struct ndctl_dimm *dimm)
 		ndctl_cmd_unref(cmd);
 	return jhealth;
 }
+
+struct json_object *util_dimm_stats_to_json(struct ndctl_dimm *dimm)
+{
+	struct json_object *jstat = json_object_new_object();
+	struct json_object *jobj;
+	struct ndctl_cmd *cmd;
+	struct ndctl_dimm_stat stat = { 0 };
+	char format_buffer[32] = { 0 };
+	int rc;
+	unsigned int flags;
+
+	if (!jstat)
+		return NULL;
+
+	cmd = ndctl_dimm_cmd_new_stats(dimm);
+	if (!cmd)
+		goto err;
+
+	rc = ndctl_cmd_submit_xlat(cmd);
+	if (rc < 0) {
+		jobj = json_object_new_string("unknown");
+		if (jobj)
+			json_object_object_add(jstat, "stats", jobj);
+		goto out;
+	}
+
+	/* Check if any stats are reported */
+	flags = ndctl_cmd_smart_get_flags(cmd);
+	if (!(flags & ND_SMART_STATS_VALID))
+		goto out;
+
+	/* Iterate through the reported stats list */
+	while (ndctl_dimm_get_stat(cmd, &stat) == 0) {
+		switch(stat.type) {
+		case STAT_TYPE_BOOL:
+			jobj = json_object_new_boolean(stat.val.bool_val);
+			break;
+		case STAT_TYPE_INT:
+			jobj = json_object_new_int(stat.val.int_val);
+			break;
+		case STAT_TYPE_INT64:
+			jobj = json_object_new_int64(stat.val.int64_val);
+			break;
+		case STAT_TYPE_DOUBLE:
+			jobj = json_object_new_double(stat.val.double_val);
+			break;
+		case STAT_TYPE_STR:
+			jobj = json_object_new_string(stat.val.str_val);
+			break;
+		case STAT_TYPE_PERCENT:
+			snprintf(format_buffer, sizeof(format_buffer) - 1,
+				 "%u%%",stat.val.int_val);
+			format_buffer[sizeof(format_buffer) - 1] = '\0';
+			jobj = json_object_new_string(format_buffer);
+			break;
+		default:
+			jobj = json_object_new_string("unknown-type");
+			break;
+		};
+
+		if (jobj)
+			json_object_object_add(jstat, stat.name, jobj);
+	}
+	ndctl_cmd_unref(cmd);
+	return jstat;
+ err:
+	json_object_put(jstat);
+	jstat = NULL;
+ out:
+	if (cmd)
+		ndctl_cmd_unref(cmd);
+	return jstat;
+}

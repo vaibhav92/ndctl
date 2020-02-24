@@ -31,6 +31,32 @@ NDCTL_EXPORT struct ndctl_cmd *ndctl_dimm_cmd_new_smart(
 		return NULL;
 }
 
+NDCTL_EXPORT struct ndctl_cmd *ndctl_dimm_cmd_new_stats(
+		struct ndctl_dimm *dimm)
+{
+	struct ndctl_dimm_ops *ops = dimm->ops;
+
+	if (ops && ops->new_stats)
+		return ops->new_stats(dimm);
+	else
+		return NULL;
+}
+
+NDCTL_EXPORT int ndctl_dimm_get_stat(struct ndctl_cmd *cmd,
+				      struct ndctl_dimm_stat * stat)
+{
+	struct ndctl_dimm_ops *ops;
+
+	if (!cmd || !cmd->dimm)
+		return -EINVAL;
+	ops = cmd->dimm->ops;
+
+	if (ops && ops->get_stat)
+		return ops->get_stat(cmd, stat);
+	else
+		return -ENOENT;
+}
+
 NDCTL_EXPORT struct ndctl_cmd *ndctl_dimm_cmd_new_smart_threshold(
 		struct ndctl_dimm *dimm)
 {

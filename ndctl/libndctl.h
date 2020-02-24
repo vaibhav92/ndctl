@@ -247,6 +247,7 @@ int ndctl_cmd_ars_stat_get_flag_overflow(struct ndctl_cmd *ars_stat);
 #define ND_SMART_ALARM_VALID	(1 << 9)
 #define ND_SMART_SHUTDOWN_VALID	(1 << 10)
 #define ND_SMART_VENDOR_VALID	(1 << 11)
+#define ND_SMART_STATS_VALID	(1 << 12)
 #define ND_SMART_SPARE_TRIP	(1 << 0)
 #define ND_SMART_MTEMP_TRIP	(1 << 1)
 #define ND_SMART_TEMP_TRIP	ND_SMART_MTEMP_TRIP
@@ -341,6 +342,28 @@ int ndctl_cmd_get_status(struct ndctl_cmd *cmd);
 unsigned int ndctl_cmd_get_firmware_status(struct ndctl_cmd *cmd);
 int ndctl_cmd_submit(struct ndctl_cmd *cmd);
 
+/* Holds a single dimm stat which can be retrived */
+struct ndctl_dimm_stat {
+        const char *name;
+        enum {
+		STAT_TYPE_BOOL,
+		STAT_TYPE_INT,
+		STAT_TYPE_INT64,
+		STAT_TYPE_DOUBLE,
+		STAT_TYPE_STR,
+		STAT_TYPE_PERCENT,
+	} type;
+	union {
+		bool bool_val;
+		int int_val;
+		long long int64_val;
+		double double_val;
+		char str_val[32];
+	} val;
+};
+
+struct ndctl_cmd *ndctl_dimm_cmd_new_stats(struct ndctl_dimm *dimm);
+int ndctl_dimm_get_stat(struct ndctl_cmd *cmd, struct ndctl_dimm_stat *stat);
 struct badblock {
 	unsigned long long offset;
 	unsigned int len;
