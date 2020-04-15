@@ -17,6 +17,7 @@
 #include <ndctl.h>
 #include <ndctl/libndctl.h>
 #include <lib/private.h>
+#include <papr_pdsm.h>
 
 static bool papr_cmd_is_supported(struct ndctl_dimm *dimm, int cmd)
 {
