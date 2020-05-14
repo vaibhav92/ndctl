@@ -551,6 +551,41 @@ static struct ndctl_cmd * papr_new_stats(struct ndctl_dimm * dimm)
 	return cmd;
 }
 
+/* Return a single dimm-stat from the command until ret */
+static int papr_get_stat(struct ndctl_cmd *cmd, struct ndctl_dimm_stat * stat)
+{
+	/* Store the next stat index in stat->provider_private */
+	int next_index;
+	struct dimm_priv * p = cmd->dimm->dimm_user_data;
+	struct nd_pdsm_cmd_pkg *pcmd;
+	const struct dimm_stat *stat_desc;
+
+	if (!stat || !cmd)
+		return -EINVAL;
+
+	pcmd = nd_to_pdsm_cmd_pkg(cmd->pkg);
+	if (pcmd_to_pdsm(pcmd) != PAPR_SCM_PDSM_READ_PERF_STATS)
+		return -EINVAL;
+
+	/* Fetch the next_index from cmd and check bounds */
+	next_index = (cmd->private_data - (void*)0);
+	if (next_index >= p->count_perf_stats)
+		return -ENOENT;
+
+	stat_desc = get_dimm_stat_desc(p->perf_stats[next_index].id);
+	if (!stat_desc)
+		return -EINVAL;
+
+	/* populate theprovided struct */
+	stat->name = stat_desc->name;
+	stat->type = stat_desc->type;
+	stat->val.int64_val = p->perf_stats[next_index].val;
+
+	/* update the stored next index in the struct ndctl_cmd */
+	cmd->private_data = (void*)0 + next_index + 1;
+	return 0;
+}
+
 struct ndctl_dimm_ops * const papr_scm_dimm_ops = &(struct ndctl_dimm_ops) {
 	.cmd_is_supported = papr_cmd_is_supported,
 	.dimm_init = papr_dimm_init,
@@ -561,4 +596,5 @@ struct ndctl_dimm_ops * const papr_scm_dimm_ops = &(struct ndctl_dimm_ops) {
 	.smart_get_health = papr_smart_get_health,
 	.smart_get_shutdown_state = papr_smart_get_shutdown_state,
 	.new_stats = papr_new_stats,
+	.get_stat = papr_get_stat,
 };
