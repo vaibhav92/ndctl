@@ -114,6 +114,8 @@ struct nd_pdsm_cmd_pkg {
 enum papr_scm_pdsm {
 	PAPR_SCM_PDSM_MIN = 0x0,
 	PAPR_SCM_PDSM_HEALTH,
+	PAPR_SCM_PDSM_FETCH_PERF_STATS,
+	PAPR_SCM_PDSM_READ_PERF_STATS,
 	PAPR_SCM_PDSM_MAX,
 };
 
@@ -169,5 +171,51 @@ struct nd_papr_pdsm_health_v1 {
 
 /* Current version number for the dimm health struct */
 #define ND_PAPR_PDSM_HEALTH_VERSION 1
+
+/*
+ * Return the maximum buffer size needed to hold all performance state.
+ * max_stats_size: The buffer size needed to hold all stat entries
+ */
+struct nd_pdsm_fetch_perf_stats_v1 {
+	__u32 max_stats_size;
+	__u8 reserved[4];
+} __attribute__((packed));
+
+#define nd_pdsm_fetch_perf_stats nd_pdsm_fetch_perf_stats_v1
+#define ND_PDSM_FETCH_PERF_STATS_VERSION 1
+
+/*
+ * Holds a single performance stat. papr_scm owns a buffer that holds an array
+ * of all the available stats and their values. Access to the buffer is provided
+ * via PERF_STAT_SIZE and READ_PERF_STATS psdm.
+ * id : id of the performance stat. Usually acsii encode stat name.
+ * val : Non normalized value of the id.
+ */
+
+struct nd_pdsm_perf_stat {
+	__u64 id;
+	__u64 val;
+};
+
+/*
+ * Returns a chunk of performance stats buffer data to libndctl.
+ * This is needed to overcome the 256 byte envelope size limit enforced by
+ * libnvdimm.
+ * in_offset: The starting offset to perf stats data buffer.
+ * in_length: Length of data to be copied to 'stats_data'
+ * stats_data: Holds the chunk of requested perf stats data buffer.
+ *
+ * Note: To prevent races in reading performance stats, in_offset and in_length
+ * should multiple of 16-Bytes. If they are not then papr_scm will return an
+ * -EINVAL error.
+ */
+struct nd_pdsm_read_perf_stats_v1 {
+	__u32 in_offset;
+	__u32 in_length;
+ 	struct nd_pdsm_perf_stat stats_data[];
+} __attribute__((packed));
+
+#define nd_pdsm_read_perf_stats nd_pdsm_read_perf_stats_v1
+#define ND_PDSM_READ_PERF_STATS_VERSION 1
 
 #endif /* _UAPI_ASM_POWERPC_PAPR_SCM_PDSM_H_ */

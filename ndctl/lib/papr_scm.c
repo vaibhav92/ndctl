@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <util/log.h>
+#include <util/util.h>
 #include <ndctl.h>
 #include <ndctl/libndctl.h>
 #include <lib/private.h>
@@ -40,11 +41,19 @@
 #define CMD_PKG_SUBMITTED 1
 #define CMD_PKG_PARSED 2
 
+/* Number of bytes to transffer in each ioctl for pdsm READ_PERF_STATS */
+#define GET_PERF_STAT_XFER_SIZE 16
+
 /* Per dimm data. Holds per-dimm data parsed from the cmd_pkgs */
 struct dimm_priv {
 
 	/* Cache the dimm health status */
 	struct nd_papr_pdsm_health health;
+
+	/* Cache the dimm perf-stats buffer, length in bytes, count */
+	ssize_t len_perf_stats;
+	ssize_t count_perf_stats;
+	struct nd_pdsm_perf_stat *perf_stats;
 };
 
 static bool papr_cmd_is_supported(struct ndctl_dimm *dimm, int cmd)
@@ -136,6 +145,45 @@ static int update_dimm_health(struct ndctl_dimm *dimm, struct ndctl_cmd *cmd)
 	return -EINVAL;
 }
 
+/* Parse the PAPR_SCM_PDSM_FETCH_PERF_STATS command package */
+static int update_perf_stat_size(struct ndctl_dimm *dimm, struct ndctl_cmd *cmd)
+{
+	struct nd_pdsm_cmd_pkg *pcmd = nd_to_pdsm_cmd_pkg(cmd->pkg);
+	struct dimm_priv *p = dimm->dimm_user_data;
+	const struct nd_pdsm_fetch_perf_stats * psize =
+		pdsm_cmd_to_payload(pcmd);
+
+	/* is it an unknown version */
+	if (pcmd->payload_version != 1) {
+		papr_err(dimm, "Unknown payload version for perf stat size\n");
+		return -EBADE;
+	}
+
+	/* Update the perf_size and reallocate the buffer if needed */
+	if (p->len_perf_stats < psize->max_stats_size) {
+		struct nd_pdsm_perf_stat *new_stats, *old_stats;
+		old_stats = p->perf_stats;
+
+		new_stats = (struct nd_pdsm_perf_stat *)
+			calloc(1, psize->max_stats_size);
+		if (!new_stats) {
+			papr_err(dimm, "Unable to allocate new perf_stats buffer\n");
+			return -ENOMEM;
+		}
+		if (old_stats) {
+			/* Copy the old buffer contents to new */
+			memcpy(new_stats, old_stats, p->len_perf_stats);
+			free(old_stats);
+		}
+		p->perf_stats = new_stats;
+	}
+
+	p->len_perf_stats = psize->max_stats_size;
+	papr_dbg(dimm, "dimm perf stats size =%lu\n",
+		 p->len_perf_stats);
+	return 0;
+}
+
 /* Parse a command payload and update dimm flags/private data */
 static int update_dimm_stats(struct ndctl_dimm *dimm, struct ndctl_cmd *cmd)
 {
@@ -163,6 +211,8 @@ static int update_dimm_stats(struct ndctl_dimm *dimm, struct ndctl_cmd *cmd)
 	switch (pcmd_to_pdsm(pcmd)) {
 	case PAPR_SCM_PDSM_HEALTH:
 		return update_dimm_health(dimm, cmd);
+	case PAPR_SCM_PDSM_FETCH_PERF_STATS:
+		return update_perf_stat_size(dimm, cmd);
 	default:
 		papr_err(dimm, "Unhandled pdsm-request 0x%016llx\n",
 			 pcmd_to_pdsm(pcmd));
@@ -286,8 +336,126 @@ static void papr_dimm_uninit(struct ndctl_dimm *dimm)
 		return;
 	}
 
+	if (p->perf_stats)
+		free(p->perf_stats);
+
 	dimm->dimm_user_data = NULL;
 	free(p);
+}
+
+/*
+ * Check if the given command is of type PDSM_READ_PERF_STATS and return
+ * 'struct nd_pdsm_read_perf_stats *' otherwise return NULL.
+ */
+static struct nd_pdsm_read_perf_stats *cmd_to_read_perf(struct ndctl_cmd *cmd)
+{
+	struct nd_pdsm_cmd_pkg *pcmd = nd_to_pdsm_cmd_pkg(cmd->pkg);
+
+	if (cmd && cmd_is_valid(cmd->dimm, cmd) &&
+	    pcmd_to_pdsm(pcmd) == PAPR_SCM_PDSM_READ_PERF_STATS)
+		return (struct nd_pdsm_read_perf_stats *)
+			(pdsm_cmd_to_payload(pcmd));
+	else
+		return NULL;
+}
+
+/* Callbacks from libndctl core to handle iterable read_perf_stats command */
+static u32 papr_get_xfer(struct ndctl_cmd *cmd)
+{
+	struct nd_pdsm_read_perf_stats *stats = cmd_to_read_perf(cmd);
+	if (stats == NULL)
+		papr_err(cmd->dimm, "Invalid command\n");
+	return stats ? stats->in_length : 0;
+}
+
+static u32 papr_get_offset(struct ndctl_cmd *cmd)
+{
+	struct nd_pdsm_read_perf_stats *stats = cmd_to_read_perf(cmd);
+	if (stats == NULL)
+		papr_err(cmd->dimm, "Invalid command\n");
+	return stats ? stats->in_offset : 0;
+}
+
+static void papr_set_xfer(struct ndctl_cmd *cmd, u32 xfer)
+{
+	struct nd_pdsm_read_perf_stats *stats = cmd_to_read_perf(cmd);
+	if (stats == NULL)
+		papr_err(cmd->dimm, "Invalid command\n");
+	stats->in_length = xfer;
+}
+
+static void papr_set_offset(struct ndctl_cmd *cmd, u32 offset)
+{
+	struct nd_pdsm_read_perf_stats *stats = cmd_to_read_perf(cmd);
+	if (stats == NULL)
+		papr_err(cmd->dimm, "Invalid command\n");
+	stats->in_offset = offset;
+}
+
+/* Fetch dimm stats and return a command to read them */
+static struct ndctl_cmd * papr_new_stats(struct ndctl_dimm * dimm)
+{
+	struct dimm_priv * p = dimm->dimm_user_data;
+	struct ndctl_cmd * cmd = NULL;
+	int rc;
+
+	/*
+	 * Submit a pdsm FETCH_PERF_STATS to get the latest stats fetched from
+	 * PHYP and have their length returned to libndctl. Next allocate
+	 * suitable size buffer in dimm private buffer 'perf_stats' and create
+	 * an iterable command for pdsm READ_PERF_STATS to read these stats
+	 * from kernel to 'perf_stats'
+	 */
+	cmd = allocate_cmd(dimm, PAPR_SCM_PDSM_FETCH_PERF_STATS,
+			   sizeof (struct nd_pdsm_fetch_perf_stats),
+			   ND_PDSM_FETCH_PERF_STATS_VERSION);
+	if (!cmd) {
+		papr_err(dimm, "Unable to allocate cmd for perf_stats size\n");
+		return NULL;
+	}
+
+	papr_dbg(dimm, "Fetching dimm stats from papr_scm\n");
+	cmd->pkg[0].nd_size_out = ND_PDSM_ENVELOPE_CONTENT_SIZE(
+		struct nd_pdsm_fetch_perf_stats);
+
+	/* If successful update the dimm data with length of dimm stats */
+	rc = ndctl_cmd_submit_xlat(cmd);
+	rc = rc ? rc : update_dimm_stats(dimm, cmd);
+
+	ndctl_cmd_unref(cmd);
+	if (rc) {
+		papr_err(dimm, "Error fetching perf stats. Err=%d\n", rc);
+		return NULL;
+	}
+
+	/* allocate pdsm READ_PERF_STATS command having tail xfer buffer */
+	cmd = allocate_cmd(dimm, PAPR_SCM_PDSM_READ_PERF_STATS,
+			   sizeof(struct nd_pdsm_read_perf_stats) + GET_PERF_STAT_XFER_SIZE,
+			   ND_PDSM_READ_PERF_STATS_VERSION);
+	if (!cmd) {
+		papr_err(dimm, "Unable to allocated read_perf_stats cmd\n");
+		return NULL;
+	}	/* Update the expected out size from the papr_scm module */
+
+        cmd->pkg[0].nd_size_out =
+		ND_PDSM_ENVELOPE_CONTENT_SIZE(struct nd_pdsm_read_perf_stats) +
+		GET_PERF_STAT_XFER_SIZE;
+
+        /* Setup the iterators */
+	cmd->iter.total_buf = (char *) p->perf_stats;
+	cmd->iter.init_offset = 0;
+	cmd->iter.max_xfer = GET_PERF_STAT_XFER_SIZE;
+	cmd->iter.total_xfer = p->len_perf_stats;
+	cmd->iter.dir = READ;
+	cmd->iter.data = (u8*)cmd_to_read_perf(cmd)->stats_data;
+
+	/* setup the callbacks */
+	cmd->get_xfer = papr_get_xfer;
+	cmd->get_offset = papr_get_offset;
+	cmd->set_xfer = papr_set_xfer;
+	cmd->set_offset = papr_set_offset;
+
+	return cmd;
 }
 
 struct ndctl_dimm_ops * const papr_scm_dimm_ops = &(struct ndctl_dimm_ops) {
@@ -299,4 +467,5 @@ struct ndctl_dimm_ops * const papr_scm_dimm_ops = &(struct ndctl_dimm_ops) {
 	.new_smart = papr_new_smart_health,
 	.smart_get_health = papr_smart_get_health,
 	.smart_get_shutdown_state = papr_smart_get_shutdown_state,
+	.new_stats = papr_new_stats,
 };
